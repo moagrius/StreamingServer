@@ -11,8 +11,14 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.test.streamingserver.MainActivity">
 
-  <TextView
+  <Button
+      android:id="@+id/button"
       android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:text="Hello World!" />
+      android:layout_height="wrap_content" />
+
+  <VideoView
+      android:id="@+id/videoview"
+      android:layout_width="320dp"
+      android:layout_height="180dp" />
+
 </RelativeLayout>

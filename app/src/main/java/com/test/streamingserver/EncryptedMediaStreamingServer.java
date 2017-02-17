@@ -1,5 +1,6 @@
 package com.test.streamingserver;
 
+import android.content.Context;
 import android.os.Looper;
 import android.util.Log;
 
@@ -8,8 +9,6 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -19,7 +18,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.util.Map;
 import java.util.Properties;
@@ -34,25 +32,26 @@ import javax.crypto.CipherInputStream;
 public class EncryptedMediaStreamingServer implements Runnable {
 
   private static final String TAG = "Yep";
-  private int SERVER_PORT = 0;
+  private int SERVER_PORT = 8888;
   private Thread thread;
   private boolean isRunning;
   private ServerSocket socket;
-  private int port;
+  private Context context;
 
-  public EncryptedMediaStreamingServer() {
+  public EncryptedMediaStreamingServer(Context context) {
+    this.context = context;
     try {
-      socket = new ServerSocket(SERVER_PORT, 0, InetAddress.getByAddress(new byte[]{127, 0, 0, 1}));
+      socket = new ServerSocket(SERVER_PORT, 0, InetAddress.getByName(ServerUtils.getIpAddress()));
       socket.setSoTimeout(5000);
-      port = socket.getLocalPort();
     } catch (UnknownHostException e) { // impossible
     } catch (IOException e) {
       Log.e(TAG, "IOException initializing server", e);
     }
   }
 
-  public String getUrl(String path, String key, String iv) throws Exception {
-    return String.format("http://127.0.0.1:%d%s?key=%s&iv=%s", port, path, URLEncoder.encode(key, "UTF-8"), iv);
+  public String getUrl(String path) throws Exception {
+    // TODO: don't need params
+    return String.format("http://%s:%d/%s", ServerUtils.getIpAddress(), SERVER_PORT, path);
   }
 
   public void start() {
@@ -290,7 +289,7 @@ public class EncryptedMediaStreamingServer implements Runnable {
     }
 
     protected void execute() {
-      ExternalResourceDataSource dataSource = new ExternalResourceDataSource(new File(filePath), parameters.getProperty("key"), parameters.getProperty("iv"));
+      ExternalResourceDataSource dataSource = new ExternalResourceDataSource(new File(filePath), context);
       long fileSize = dataSource.getContentLength();
 
       String headers = "";
@@ -357,18 +356,21 @@ public class EncryptedMediaStreamingServer implements Runnable {
    */
   protected class ExternalResourceDataSource {
 
-    private final String mKey;
-    private final String mIV;
-    private final File mFileResource;
     long contentLength;
+    private InputStream assetStream;
+    private InputStream cipherStream;
 
-    public ExternalResourceDataSource(File resource, String key, String iv) {
-      //it is your duty to ensure that the file exists
-      mFileResource = resource;
-      mKey = key;
-      mIV = iv;
-      contentLength = mFileResource.length();
-      Log.i(TAG, "path: " + mFileResource.getPath() + ", exists: " + mFileResource.exists() + ", length: " + contentLength);
+    public ExternalResourceDataSource(File resource, Context context) {
+      try {
+        Cipher cipher = AesCipher.getDecryptionCipher();
+        assetStream = context.getAssets().open("mr-encrypted.mp4");
+        cipherStream = new CipherInputStream(assetStream, cipher);
+        contentLength = assetStream.available();
+        Log.i(TAG, "length: " + contentLength);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+
     }
 
     /**
@@ -406,7 +408,7 @@ public class EncryptedMediaStreamingServer implements Runnable {
      * @return A MIME content type.
      */
     public String getContentType() {
-      return "audio/mpeg";
+      return "video/mp4";
     }
 
     /**
@@ -424,13 +426,7 @@ public class EncryptedMediaStreamingServer implements Runnable {
     }
 
     public InputStream getInputStream() {
-      Cipher cipher = AesCipher.getDecryptionCipher();
-      try {
-        return new CipherInputStream(new FileInputStream(mFileResource), cipher);
-      } catch (FileNotFoundException e) {
-        e.printStackTrace();
-      }
-      return null;
+      return cipherStream;
     }
   }
 }
